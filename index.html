@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LINE Rich Menu Manager</title>
+    <style>
+        .card { 
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .input {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+        .button {
+            background: #4A90E2;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 8px;
+        }
+        .error { color: red; }
+        .success { color: green; }
+        .menu-item { margin-bottom: 10px; }
+        pre { 
+            background: #f5f5f5;
+            padding: 10px;
+            overflow: auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .menu-image {
+            max-width: 100%;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" style="max-width: 800px; margin: 0 auto; padding: 20px;">
+        <div class="card">
+            <h2>Configuration</h2>
+            <input type="text" id="accessToken" class="input" placeholder="Access Token">
+        </div>
+
+        <div class="card">
+            <h2>Upload New Rich Menu</h2>
+            <div class="sample-config">
+                <button onclick="showSampleConfig()" class="button">Show Sample Config</button>
+                <pre id="sample-config" style="display: none;">
+        {
+          "size": {
+            "width": 2500,
+            "height": 1686
+          },
+          "selected": false,
+          "name": "Nice richmenu",
+          "chatBarText": "Tap here",
+          "areas": [
+            {
+              "bounds": {
+                "x": 0,
+                "y": 0,
+                "width": 2500,
+                "height": 1686
+              },
+              "action": {
+                "type": "message",
+                "text": "Hello"
+              }
+            }
+          ]
+        }</pre>
+            </div>
+            <form onsubmit="handleUpload(event)" class="space-y-4">
+                <div>
+                    <label class="block mb-2">Rich Menu Configuration (JSON)</label>
+                    <textarea id="menuConfig" class="input" style="min-height: 200px"></textarea>
+                </div>
+                <div>
+                    <label class="block mb-2">Rich Menu Image (JPEG/PNG, Max 1MB, 2500x1686)</label>
+                    <input type="file" id="menuImage" class="input" accept="image/jpeg,image/png" required>
+                    <p class="text-sm text-gray-500">Image size must match the size specified in config</p>
+                </div>
+                <button type="submit" class="button">Upload Rich Menu</button>
+            </form>
+        </div>
+
+        <div id="messages"></div>
+        <div id="menuList" class="card">
+            <div class="header">
+                <h2>Rich Menu List</h2>
+                <button onclick="fetchRichMenus()" class="button">Refresh List</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let expandedMenu = null;
+
+        async function fetchRichMenus() {
+            const token = document.getElementById('accessToken').value;
+            if (!token) {
+                showError('Please enter access token');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/v2/bot/richmenu/list', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+
+                // Get default rich menu ID
+                const defaultResponse = await fetch('/api/v2/bot/user/all/richmenu', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                let defaultMenuId = null;
+                if (defaultResponse.ok) {
+                    const defaultData = await defaultResponse.json();
+                    defaultMenuId = defaultData.richMenuId;
+                } else if (defaultResponse.status === 404) {
+                    console.log('No default rich menu set');
+                } else {
+                    console.error('Error fetching default menu:', await defaultResponse.json());
+                }
+
+                await Promise.all(data.richmenus.map(async menu => {
+                    const detailResponse = await fetch(`/api/v2/bot/richmenu/${menu.richMenuId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    const detail = await detailResponse.json();
+                    menu.detail = detail;
+                }));
+                
+                displayMenus(data.richmenus || [], defaultMenuId);
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        async function loadMenuImage(menuId) {
+            const token = document.getElementById('accessToken').value;
+            try {
+                const response = await fetch(`/api/v2/bot/richmenu/${menuId}/content`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const blob = await response.blob();
+                return URL.createObjectURL(blob);
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        async function deleteRichMenu(menuId) {
+            const token = document.getElementById('accessToken').value;
+            if (!token) {
+                showError('Please enter access token');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/v2/bot/richmenu/${menuId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                showMessage('Rich menu deleted successfully', 'success');
+                fetchRichMenus();
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        function showSampleConfig() {
+            const sampleConfig = document.getElementById('sample-config');
+            sampleConfig.style.display = sampleConfig.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function handleUpload(e) {
+            e.preventDefault();
+            const token = document.getElementById('accessToken').value;
+            if (!token) {
+                showError('Please enter access token');
+                return;
+            }
+
+            const config = document.getElementById('menuConfig').value;
+            const imageFile = document.getElementById('menuImage').files[0];
+
+            if (!config || !imageFile) {
+                showError('Please provide both config and image');
+                return;
+            }
+
+            try {
+                // Upload config
+                const configResponse = await fetch('/api/v2/bot/richmenu', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: config
+                });
+
+                if (!configResponse.ok) {
+                    throw new Error(`Config upload failed: ${configResponse.status}`);
+                }
+
+                const { richMenuId } = await configResponse.json();
+
+                // Upload image
+                const formData = new FormData();
+                formData.append('image', imageFile);
+
+                const imageResponse = await fetch(`/api/v2/bot/richmenu/${richMenuId}/content`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+
+                if (!imageResponse.ok) {
+                    throw new Error(`Image upload failed: ${imageResponse.status}`);
+                }
+
+                showMessage('Rich menu uploaded successfully', 'success');
+                document.getElementById('menuConfig').value = '';
+                document.getElementById('menuImage').value = '';
+                fetchRichMenus();
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        function displayMenus(menus, defaultMenuId) {
+            const container = document.getElementById('menuList');
+            container.innerHTML = `
+                <div class="header">
+                    <h2>Rich Menu List</h2>
+                    <button onclick="fetchRichMenus()" class="button">Refresh List</button>
+                </div>
+            `;
+
+            menus.forEach(menu => {
+                const div = document.createElement('div');
+                div.className = 'menu-item card';
+                const isDefault = menu.richMenuId === defaultMenuId;
+                div.innerHTML = `
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div class="thumbnail" id="thumb-${menu.richMenuId}" 
+                                     style="width: 60px; height: 40px; background: #f0f0f0; cursor: pointer; border-radius: 4px;"
+                                     onclick="toggleFullImage('${menu.richMenuId}')">
+                                </div>
+                                <div>
+                                    <h3>ID: ${menu.richMenuId} ${isDefault ? '(Default)' : ''}</h3>
+                                    <p>Created: ${new Date(menu.detail?.createdTime || 0).toLocaleString()}</p>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button onclick="toggleMenu('${menu.richMenuId}')" class="button">
+                                    ${expandedMenu === menu.richMenuId ? '?' : '?'}
+                                </button>
+                                <button onclick="setDefaultMenu('${menu.richMenuId}')" class="button">
+                                    Set as Default
+                                </button>
+                                <button onclick="deleteRichMenu('${menu.richMenuId}')" class="button" style="background-color: #dc2626;">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                        <div id="image-${menu.richMenuId}" style="display: none;"></div>
+                        ${expandedMenu === menu.richMenuId ? 
+                            `<pre>${JSON.stringify(menu, null, 2)}</pre>` : 
+                            ''}
+                    </div>
+                `;
+                container.appendChild(div);
+                loadThumbnail(menu.richMenuId);
+            });
+        }
+
+        async function loadThumbnail(menuId) {
+            const imageUrl = await loadMenuImage(menuId);
+            const thumbContainer = document.getElementById(`thumb-${menuId}`);
+            thumbContainer.style.backgroundImage = `url(${imageUrl})`;
+            thumbContainer.style.backgroundSize = 'cover';
+            thumbContainer.style.backgroundPosition = 'center';
+        }
+
+        async function toggleFullImage(menuId) {
+            const container = document.getElementById(`image-${menuId}`);
+            if (container.style.display === 'none') {
+                const imageUrl = await loadMenuImage(menuId);
+                container.innerHTML = `<img src="${imageUrl}" style="max-width: 100%; margin-top: 10px;">`;
+                container.style.display = 'block';
+            } else {
+                container.style.display = 'none';
+            }
+        }
+
+        async function setDefaultMenu(menuId) {
+            const token = document.getElementById('accessToken').value;
+            try {
+                const response = await fetch(`/api/v2/bot/user/all/richmenu/${menuId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                showMessage('Default rich menu set successfully', 'success');
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        function toggleMenu(menuId) {
+            expandedMenu = expandedMenu === menuId ? null : menuId;
+            fetchRichMenus();
+        }
+
+        function showError(message) {
+            showMessage(message, 'error');
+        }
+
+        function showMessage(message, type) {
+            const container = document.getElementById('messages');
+            container.innerHTML = `<div class="${type}" style="padding: 10px; margin: 10px 0;">${message}</div>`;
+        }
+    </script>
+</body>
+</html>
