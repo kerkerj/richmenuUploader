@@ -1,22 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LINE Rich Menu Manager</title>
     <style>
-        .card { 
+        .card {
             background: white;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             padding: 20px;
             margin-bottom: 20px;
         }
+
         .input {
             width: 100%;
             padding: 8px;
             margin-bottom: 10px;
         }
+
         .button {
             background: #4A90E2;
             color: white;
@@ -26,26 +29,39 @@
             cursor: pointer;
             margin-right: 8px;
         }
-        .error { color: red; }
-        .success { color: green; }
-        .menu-item { margin-bottom: 10px; }
-        pre { 
+
+        .error {
+            color: red;
+        }
+
+        .success {
+            color: green;
+        }
+
+        .menu-item {
+            margin-bottom: 10px;
+        }
+
+        pre {
             background: #f5f5f5;
             padding: 10px;
             overflow: auto;
         }
+
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 16px;
         }
+
         .menu-image {
             max-width: 100%;
             margin-top: 10px;
         }
     </style>
 </head>
+
 <body>
     <div id="app" style="max-width: 800px; margin: 0 auto; padding: 20px;">
         <div class="card">
@@ -97,6 +113,28 @@
         </div>
 
         <div id="messages"></div>
+        <div class="card">
+            <div class="header">
+                <h2>Rich Menu Alias Management</h2>
+                <button onclick="fetchAliasList()" class="button">Refresh Alias List</button>
+            </div>
+
+            <div class="create-alias-form" style="margin-bottom: 20px;">
+                <h3>Create New Alias</h3>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <select id="aliasRichMenuId" class="input" style="flex-grow: 1;">
+                        <option value="">Select Rich Menu</option>
+                    </select>
+                    <input type="text" id="richMenuAliasId" placeholder="Alias ID (e.g. richmenu-alias-a)" class="input"
+                        style="flex-grow: 1;">
+                    <button onclick="createAlias()" class="button">Create Alias</button>
+                </div>
+            </div>
+
+            <div id="aliasList">
+                <p>No aliases found. Click "Refresh Alias List" to load data.</p>
+            </div>
+        </div>
         <div id="menuList" class="card">
             <div class="header">
                 <h2>Rich Menu List</h2>
@@ -121,11 +159,11 @@
                         'Authorization': `Bearer ${token}`
                     }
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
                 const data = await response.json();
 
                 // Get default rich menu ID
@@ -134,7 +172,7 @@
                         'Authorization': `Bearer ${token}`
                     }
                 });
-                
+
                 let defaultMenuId = null;
                 if (defaultResponse.ok) {
                     const defaultData = await defaultResponse.json();
@@ -154,7 +192,7 @@
                     const detail = await detailResponse.json();
                     menu.detail = detail;
                 }));
-                
+
                 displayMenus(data.richmenus || [], defaultMenuId);
             } catch (err) {
                 showError(err.message);
@@ -169,11 +207,11 @@
                         'Authorization': `Bearer ${token}`
                     }
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
                 const blob = await response.blob();
                 return URL.createObjectURL(blob);
             } catch (err) {
@@ -309,9 +347,9 @@
                             </div>
                         </div>
                         <div id="image-${menu.richMenuId}" style="display: none;"></div>
-                        ${expandedMenu === menu.richMenuId ? 
-                            `<pre>${JSON.stringify(menu, null, 2)}</pre>` : 
-                            ''}
+                        ${expandedMenu === menu.richMenuId ?
+                        `<pre>${JSON.stringify(menu, null, 2)}</pre>` :
+                        ''}
                     </div>
                 `;
                 container.appendChild(div);
@@ -347,11 +385,11 @@
                         'Authorization': `Bearer ${token}`,
                     }
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
                 showMessage('Default rich menu set successfully', 'success');
             } catch (err) {
                 showError(err.message);
@@ -371,6 +409,161 @@
             const container = document.getElementById('messages');
             container.innerHTML = `<div class="${type}" style="padding: 10px; margin: 10px 0;">${message}</div>`;
         }
+
+        // Fetch alias list from API
+        async function fetchAliasList() {
+            const token = document.getElementById('accessToken').value;
+            if (!token) {
+                showError('Please enter access token');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/v2/bot/richmenu/alias/list', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayAliasList(data.aliases || []);
+                updateRichMenuSelect(data.aliases || []);
+            } catch (err) {
+                showError(`Failed to fetch alias list: ${err.message}`);
+            }
+        }
+
+        // Update rich menu dropdown for creating aliases
+        async function updateRichMenuSelect(existingAliases) {
+            const token = document.getElementById('accessToken').value;
+            try {
+                const response = await fetch('/api/v2/bot/richmenu/list', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const select = document.getElementById('aliasRichMenuId');
+
+                // Clear current options except the first one
+                while (select.options.length > 1) {
+                    select.remove(1);
+                }
+
+                // Add rich menus as options
+                data.richmenus.forEach(menu => {
+                    const option = document.createElement('option');
+                    option.value = menu.richMenuId;
+                    option.textContent = `${menu.name} (${menu.richMenuId})`;
+                    select.appendChild(option);
+                });
+            } catch (err) {
+                console.error(`Failed to update rich menu select: ${err.message}`);
+            }
+        }
+
+        // Display alias list in UI
+        function displayAliasList(aliases) {
+            const container = document.getElementById('aliasList');
+
+            if (aliases.length === 0) {
+                container.innerHTML = '<p>No aliases found.</p>';
+                return;
+            }
+
+            let html = '<div class="alias-items">';
+            aliases.forEach(alias => {
+                html += `
+            <div class="menu-item card" style="margin-bottom: 10px; padding: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h3>Alias: ${alias.richMenuAliasId}</h3>
+                        <p>Maps to Rich Menu: ${alias.richMenuId}</p>
+                    </div>
+                    <button onclick="deleteAlias('${alias.richMenuAliasId}')" class="button" style="background-color: #dc2626;">
+                        Delete Alias
+                    </button>
+                </div>
+            </div>
+        `;
+            });
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        // Create new alias
+        async function createAlias() {
+            const token = document.getElementById('accessToken').value;
+            const richMenuId = document.getElementById('aliasRichMenuId').value;
+            const aliasId = document.getElementById('richMenuAliasId').value;
+
+            if (!token || !richMenuId || !aliasId) {
+                showError('Please fill in all fields');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/v2/bot/richmenu/alias', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        richMenuId: richMenuId,
+                        richMenuAliasId: aliasId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                showMessage('Alias created successfully', 'success');
+                document.getElementById('richMenuAliasId').value = '';
+                fetchAliasList();
+            } catch (err) {
+                showError(`Failed to create alias: ${err.message}`);
+            }
+        }
+
+        // Delete alias
+        async function deleteAlias(aliasId) {
+            const token = document.getElementById('accessToken').value;
+
+            if (!confirm(`Are you sure you want to delete alias ${aliasId}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/v2/bot/richmenu/alias/${aliasId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                showMessage('Alias deleted successfully', 'success');
+                fetchAliasList();
+            } catch (err) {
+                showError(`Failed to delete alias: ${err.message}`);
+            }
+        }
     </script>
 </body>
+
 </html>
